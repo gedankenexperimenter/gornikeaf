@@ -1,28 +1,3 @@
-.. These are examples of badges you might want to add to your README:
-   please update the URLs accordingly
-
-    .. image:: https://api.cirrus-ci.com/github/<USER>/gornikeaf.svg?branch=main
-        :alt: Built Status
-        :target: https://cirrus-ci.com/github/<USER>/gornikeaf
-    .. image:: https://readthedocs.org/projects/gornikeaf/badge/?version=latest
-        :alt: ReadTheDocs
-        :target: https://gornikeaf.readthedocs.io/en/stable/
-    .. image:: https://img.shields.io/coveralls/github/<USER>/gornikeaf/main.svg
-        :alt: Coveralls
-        :target: https://coveralls.io/r/<USER>/gornikeaf
-    .. image:: https://img.shields.io/pypi/v/gornikeaf.svg
-        :alt: PyPI-Server
-        :target: https://pypi.org/project/gornikeaf/
-    .. image:: https://img.shields.io/conda/vn/conda-forge/gornikeaf.svg
-        :alt: Conda-Forge
-        :target: https://anaconda.org/conda-forge/gornikeaf
-    .. image:: https://pepy.tech/badge/gornikeaf/month
-        :alt: Monthly Downloads
-        :target: https://pepy.tech/project/gornikeaf
-    .. image:: https://img.shields.io/twitter/url/http/shields.io.svg?style=social&label=Twitter
-        :alt: Twitter
-        :target: https://twitter.com/gornikeaf
-
 .. image:: https://img.shields.io/badge/-PyScaffold-005CA0?logo=pyscaffold
     :alt: Project generated with PyScaffold
     :target: https://pyscaffold.org/
@@ -33,17 +8,43 @@
 gornikeaf
 =========
 
+This program extracts data from a set of EAF files, summarizing segments found
+in the ``Mother`` and ``Toddler`` tiers, with one row per segment written to a
+CSV file.  The rows in the output file contain coded data based on annotations
+found in subtiers for each of the segments, as well as the ``Time Period`` and
+``Trash`` tiers.
 
-    Add a short description here!
+Installation
+============
 
+Clone the repository, then use ``pip`` to install the ``gornikeaf`` tool::
 
-A longer description of your project goes here...
+  $ git clone https://github.com/gedankenexperimenter/gornikeaf
 
+  $ cd gornikeaf
 
-.. _pyscaffold-notes:
+  $ pip install .
 
-Note
-====
+On Windows, if you're using `pyenv`, you may also need to run this command in
+order to get the `gornikeaf` command in your path::
 
-This project has been set up using PyScaffold 4.1.4. For details and usage
-information on PyScaffold see https://pyscaffold.org/.
+  $ pyenv rehash
+
+This should result in a ``gornikeaf`` command line program becoming available
+in your path. In a directory with EAF files containing the target data, then
+run::
+
+  $ gornikeaf *.eaf
+
+The output data will be written to the file ``gornikeaf-output.csv``, containing
+one row per ``Mother`` or ``Toddler`` utterance segment, with columns for:
+
+- Participant ID (derived from the filename)
+- Speaker (Mother=0, Toddler=1)
+- Timestamp (milliseconds since the start of the recording)
+- Responsivity (Passive=0, Elaborative/Collaborative=1, Disconnected=2)
+- Emotion Words (number of emotion words in utterance segment)
+- Type of Speech (Recited=0, Spontaneous=1)
+- Directed Speech (Research Assistant=0, Toddler=1)
+- Time Period (Story Reading=0, Conversation=1)
+- Trash (No=0, Yes - Noisy Speech=1, Yes/Overlap=2)
