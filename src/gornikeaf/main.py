@@ -217,15 +217,21 @@ def get_noise_value(eaf, noise_segments, start, end):
         segments.append(noise_segment)
 
     noisy = False
+    yes = False
     for segment in segments:
         if re.search(r'^no', segment[-1], re.IGNORECASE):
             return 0
         if (re.search(r'noisy', segment[-1], re.IGNORECASE) or
             re.search(r'overlap', segment[-1], re.IGNORECASE)):
             noisy = True
+            continue
+        if re.search(r'yes', segment[-1], re.IGNORECASE):
+            yes = True
     if noisy:
         return 1
-    return 2
+    if yes:
+        return 2
+    return ''
 
 # ------------------------------------------------------------------------------
 def get_activity_value(eaf, start):
