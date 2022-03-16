@@ -220,7 +220,8 @@ def get_noise_value(eaf, noise_segments, start, end):
     for segment in segments:
         if re.search(r'^no', segment[-1], re.IGNORECASE):
             return 0
-        if re.search(r'noisy', segment[-1], re.IGNORECASE):
+        if (re.search(r'noisy', segment[-1], re.IGNORECASE) or
+            re.search(r'overlap', segment[-1], re.IGNORECASE)):
             noisy = True
     if noisy:
         return 1
