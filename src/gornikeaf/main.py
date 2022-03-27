@@ -55,7 +55,7 @@ def parse_args(args):
       :obj:`argparse.Namespace`: command line parameters namespace
     """
     parser = argparse.ArgumentParser(
-        description="Generate summary of MusicBurst  tier data in EAF file(s)"
+        description="Generate summary of data in EAF file(s)"
     )
     parser.add_argument(
         '--version',
