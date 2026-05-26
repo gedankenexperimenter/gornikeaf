@@ -8,6 +8,7 @@ import argparse
 import csv
 import logging
 import os
+import pathlib
 import re
 import sys
 
@@ -22,12 +23,23 @@ __license__ = "MIT"
 
 # ==============================================================================
 # Constants
-ACTIVITY_TIER_NAME = 'Time Period sub'
-NOISE_TIER_NAME = 'Trash sub'
-MOTHER_TIER_NAME = 'Mother'
-MOTHER_SUBTIER_NAMES = ['Responsivity', 'Emotion Words', 'Directed Speech', 'Type of Speech']
-CHILD_TIER_NAME = 'Toddler'
-CHILD_SUBTIER_NAMES = ['Emotion Words - Toddler']
+MOTHER_TIER_NAME = 'FA1'
+CHILD_TIER_NAME = 'CHI'
+SPEAKER_CODES = {
+    MOTHER_TIER_NAME : 1,
+    CHILD_TIER_NAME  : 2,
+}
+
+ACTIVITY_TIER_NAME = 'PHS@TIME'
+RESPONSIVITY_TIER_NAME = 'RES@FA1'
+EFW_SUBTIER_NAME = 'EFW'
+AFFECT_SUBTIER_DICT = {
+    'HAPPY' : 'Affect_Happy',
+    'SAD'   : 'Affect_Sad',
+    'ANGER' : 'Affect_Angry',
+    'WORRY' : 'Affect_Worry',
+}
+QUALITY_TIER_NAME = 'QLT@TRA'
 
 # ==============================================================================
 class Error(Exception):
@@ -141,6 +153,7 @@ def collect_input_data(eaf_file):
       :obj:`OutputRecord`: record containing the output data
     """
     logging.info("Processing %s", eaf_file)
+    participant_id = pathlib.Path(eaf_file).stem
 
     output_records = []
 
@@ -149,197 +162,131 @@ def collect_input_data(eaf_file):
     tier_names = eaf.get_tier_names()
     logging.debug("All tiers: %s", format(list(tier_names)))
 
-    if ACTIVITY_TIER_NAME not in tier_names:
-        raise InputError(f"Missing {ACTIVITY_TIER_NAME} tier in file {eaf_file}")
-
-    activity_segments = eaf.get_annotation_data_for_tier(ACTIVITY_TIER_NAME)
-
-    for segment in activity_segments:
-        logging.debug("%s segment: %s", ACTIVITY_TIER_NAME, format(segment))
-
-    if NOISE_TIER_NAME not in tier_names:
-        raise InputError(f"Missing {NOISE_TIER_NAME} tier in file {eaf_file}")
-
-    noise_segments = eaf.get_annotation_data_for_tier(NOISE_TIER_NAME)
-
-    for segment in noise_segments:
-        logging.debug("%s segment: %s", NOISE_TIER_NAME, format(segment))
-
     if MOTHER_TIER_NAME not in tier_names:
         raise InputError(f"Missing {MOTHER_TIER_NAME} tier in file {eaf_file}")
 
-    mother_segments = eaf.get_annotation_data_for_tier(MOTHER_TIER_NAME)
+    if CHILD_TIER_NAME not in tier_names:
+        raise InputError(f"Missing {CHILD_TIER_NAME} tier in file {eaf_file}")
 
-    for segment in mother_segments:
-        (start, end, annotation) = segment[:3]
-        logging.debug("%s segment: %s",
-                      MOTHER_TIER_NAME, format((start, end, annotation)))
-        data = get_mother_segment_data(eaf, start, end)
-        data['Trash'] = get_noise_value(eaf, noise_segments, start, end)
-        data['Time Period'] = get_activity_value(eaf, start)
-        data['speaker'] = 0
-        data['filename'] = eaf_file
-        data['timestamp'] = start
-        logging.info("%s", format(data))
-        output_records.append(data)
+    output_records = []
 
-    child_segments = eaf.get_annotation_data_for_tier(CHILD_TIER_NAME)
-
-    for segment in child_segments:
-        (start, end, annotation) = segment[:3]
-        logging.debug("%s segment: %s",
-                      CHILD_TIER_NAME, format((start, end, annotation)))
-        data = get_child_segment_data(eaf, start, end)
-        data['Trash'] = get_noise_value(eaf, noise_segments, start, end)
-        data['Time Period'] = get_activity_value(eaf, start)
-        data['Emotion Words'] = data.pop('Emotion Words - Toddler')
-        data['speaker'] = 1
-        data['Responsivity'] = ''
-        data['Type of Speech'] = ''
-        data['Directed Speech'] = ''
-        data['filename'] = eaf_file
-        data['timestamp'] = start
-        logging.info("%s", format(data))
-        output_records.append(data)
+    for speaker, speaker_code in SPEAKER_CODES.items():
+        for segment in eaf.get_annotation_data_for_tier(speaker):
+            logging.debug("%s segment: %s", speaker, format(segment))
+            data = collect_segment_data(eaf, speaker, segment)
+            data['Participant_ID'] = participant_id
+            data['Speaker'] = speaker_code
+            output_records.append(data)
 
     return output_records
 
 # ------------------------------------------------------------------------------
-def get_noise_value(eaf, noise_segments, start, end):
-    """Get prioritized noise segment annotation
+def collect_segment_data(eaf, speaker, segment):
+    """Return all the relevant data for a given segment
     """
-    segments = eaf.get_annotation_data_at_time(NOISE_TIER_NAME, start + 1)
-    for noise_segment in noise_segments:
-        if noise_segment[0] <= start:
-            continue
-        if noise_segment[0] >= end:
-            break
-        segments.append(noise_segment)
+    data = {}
+    (start, end) = segment[:2]
+    data['Start_Time'] = start
+    data['End_Time'] = end
+    data['Time_Period'] = get_activity_code(eaf, start)
+    data['Emotion_Words'] = get_efw_count(eaf, speaker, start)
+    data['Audio_Quality'] = get_audio_quality(eaf, start)
+    for key, value in get_affect_codes(eaf, speaker, start).items():
+        data[key] = value
+    data['Responsivity'] = ''
+    if speaker == MOTHER_TIER_NAME:
+        data['Responsivity'] = get_responsivity_code(eaf, start)
+    return data
 
-    noisy = False
-    yes = False
-    for segment in segments:
-        if re.search(r'^no', segment[-1], re.IGNORECASE):
-            return 0
-        if (re.search(r'noisy', segment[-1], re.IGNORECASE) or
-            re.search(r'overlap', segment[-1], re.IGNORECASE)):
-            noisy = True
-            continue
-        if re.search(r'yes', segment[-1], re.IGNORECASE):
-            yes = True
-    if noisy:
+# ------------------------------------------------------------------------------
+def get_activity_code(eaf, start):
+    """Get activity code at given time from time period subtier
+    """
+    seg = eaf.get_annotation_data_at_time(ACTIVITY_TIER_NAME, start + 1)
+    if seg is None or len(seg) < 1:
+        return 0
+    activity = seg[0][2]
+    if re.search(r'reading', activity, re.IGNORECASE):
         return 1
-    if yes:
+    if re.search(r'conversation', activity, re.IGNORECASE):
         return 2
-    return ''
+    if re.search(r'play', activity, re.IGNORECASE):
+        return 3
+    return 0
 
 # ------------------------------------------------------------------------------
-def get_activity_value(eaf, start):
-    """Get value from time period
+def get_responsivity_code(eaf, start):
+    """Get responsivity code at given time
     """
-    segment = eaf.get_annotation_data_at_time(ACTIVITY_TIER_NAME, start + 1)[0]
-    return segment[-1]
+    seg = eaf.get_annotation_data_at_time(RESPONSIVITY_TIER_NAME, start + 1)
+    if seg is None or len(seg) < 1:
+        return '?'
+    desc = seg[0][2]
+    if re.search(r'passive', desc, re.IGNORECASE):
+        return 2
+    if re.search(r'elaborative', desc, re.IGNORECASE):
+        return 3
+    if re.search(r'disjointed', desc, re.IGNORECASE):
+        return 4
+    if re.search(r'directive', desc, re.IGNORECASE):
+        return 5
+    return '?'
 
 # ------------------------------------------------------------------------------
-def get_mother_segment_data(eaf, start, end):
-    """Get annotations from relevant subtiers
+def get_efw_count(eaf, speaker, start):
+    """Get emotion-focused word count for speaker (mother or child) at given time
     """
-    data = {}
-    data['speaker'] = 'mother'
-    logging.debug("Gather mother data from t=%s", start)
-    for tier in MOTHER_SUBTIER_NAMES:
-        segment = eaf.get_annotation_data_at_time(tier, start + 1)[0]
-        if (segment[0] != start or segment[1] != end):
-            logging.warning("Tier '%s' segment at %s doesn't match '%s' at %s",
-                            tier, segment[0], MOTHER_TIER_NAME, start)
-        logging.debug("%s: %s", tier, segment[-1])
-        data[tier] = segment[-1]
-    return data
+    tier = EFW_SUBTIER_NAME + "@" + speaker
+    seg = eaf.get_annotation_data_at_time(tier, start + 1)
+    logging.debug("annotation data for tier %s at %s: %s", tier, start, format(seg))
+    if seg is None or len(seg) < 1:
+        logging.debug("timestamp: %s", format(seg))
+        return '?'
+    desc = seg[0][2]
+    logging.debug("desc = %s", desc)
+    m = re.match(r'.*(\d+)', desc)
+    if m is not None:
+        return m.group(1)
+    return 0
 
 # ------------------------------------------------------------------------------
-def get_child_segment_data(eaf, start, end):
-    """Get annotations from relevan subtiers
+def get_affect_codes(eaf, speaker, start):
+    """Get affect data for speaker (mother or child) at given time
     """
-    data = {}
-    data['speaker'] = 'toddler'
-    logging.debug("Gathering toddler data from t=%s", start)
-    for tier in CHILD_SUBTIER_NAMES:
-        segment = eaf.get_annotation_data_at_time(tier, start + 1)[0]
-        if (segment[0] != start or segment[1] != end):
-            logging.warning("Tier '%s' segment at %s doesn't match '%s' at %s",
-                            tier, segment[0], CHILD_TIER_NAME, start)
-        logging.debug("%s: %s", tier, segment[-1])
-        data[tier] = segment[-1]
-    return data
+    codes = {}
+    for subtier, field in AFFECT_SUBTIER_DICT.items():
+        tier = subtier + "@" + speaker
+        seg = eaf.get_annotation_data_at_time(tier, start + 1)
+        if seg is None or len(seg) < 1:
+            codes[field] = ''
+            continue
+        desc = seg[0][2]
+        m = re.match(r'^(\d)', desc)
+        if m is not None:
+            codes[field] = m.group(0)
+        else:
+            codes[field] = ''
+            if re.search(r'neutral', desc, re.IGNORECASE):
+                codes[field] = '0'
+    return codes
 
 # ------------------------------------------------------------------------------
-def convert_output_record(data):
-    """Covert data record into a list for output csv
+def get_audio_quality(eaf, start):
+    """Get audio recording quality at given time
     """
-    output_record = []
-
-    # Participant ID
-    output_record.append(os.path.basename(data['filename']).replace('.eaf', ''))
-
-    # Speaker
-    output_record.append(data['speaker'])
-
-    # Timestamp
-    output_record.append(data['timestamp'])
-
-    # Responsivity
-    responsivity = data['Responsivity']
-    if re.search(r'passive', responsivity, re.IGNORECASE):
-        responsivity = 0
-    elif re.search(r'aborative', responsivity, re.IGNORECASE):
-        responsivity = 1
-    elif re.search(r'disconnected', responsivity, re.IGNORECASE):
-        responsivity = 2
-    else:
-        responsivity = ''
-    output_record.append(responsivity)
-
-    # Emotion Words (count)
-    match = re.search(r'\d+', data['Emotion Words'])
-    if match is not None:
-        output_record.append(match.group(0))
-    else:
-        output_record.append(0)
-
-    # Type of Speech
-    type_of_speech = data['Type of Speech']
-    if re.search(r'recited', type_of_speech, re.IGNORECASE):
-        type_of_speech = 0
-    elif re.search(r'spontan', type_of_speech, re.IGNORECASE):
-        type_of_speech = 1
-    output_record.append(type_of_speech)
-
-    # Directed Speech
-    directed_speech = data['Directed Speech']
-    if re.search(r'assistant', directed_speech, re.IGNORECASE):
-        directed_speech = 0
-    elif re.search(r'toddler', directed_speech, re.IGNORECASE):
-        directed_speech = 1
-    elif data['speaker'] == 0:
-        logging.warning("Unexpected annotation value found for 'Directed Speech': %s",
-                        data['Directed Speech'])
-    output_record.append(directed_speech)
-
-    # Time Period
-    time_period = data['Time Period']
-    if re.search(r'story', time_period, re.IGNORECASE):
-        time_period = 0
-    elif re.search(r'conversation', time_period, re.IGNORECASE):
-        time_period = 1
-    else:
-        logging.warning("Unexpected annotation value found for 'Time Period': %s",
-                        data['Time Period'])
-    output_record.append(time_period)
-
-    # Trash (noise)
-    output_record.append(data['Trash'])
-
-    return output_record
+    seg = eaf.get_annotation_data_at_time(QUALITY_TIER_NAME, start + 1)
+    if seg is None or len(seg) < 1:
+        return '?'
+    desc = seg[0][2]
+    if re.search(r'noisy', desc, re.IGNORECASE):
+        return 2
+    if re.search(r'^y', desc, re.IGNORECASE):
+        return 1
+    if re.search(r'^n', desc, re.IGNORECASE):
+        return 3
+    if re.search(r'^o', desc, re.IGNORECASE):
+        return 4
+    return '?'
 
 # ==============================================================================
 def main(args):
@@ -365,22 +312,38 @@ def main(args):
 
     output = setup_output(args.output, output_delimiter)
     output.writerow([
-        'Participant ID',
+        'Participant_ID',
         'Speaker',
-        'Timestamp',
+        'Start_Time',
+        'End_Time',
+        'Time_Period',
         'Responsivity',
-        'Emotion Words',
-        'Type of Speech',
-        'Directed Speech',
-        'Time Period',
-        'Trash',
+        'Emotion_Words',
+        'Affect_Happy',
+        'Affect_Worry',
+        'Affect_Sad',
+        'Affect_Angry',
+        'Audio_Quality',
     ])
 
     for eaf_file in args.eaf_files:
         try:
             output_records = collect_input_data(eaf_file)
             for record in output_records:
-                output.writerow(convert_output_record(record))
+                output.writerow([
+                    record['Participant_ID'],
+                    record['Speaker'],
+                    record['Start_Time'],
+                    record['End_Time'],
+                    record['Time_Period'],
+                    record['Responsivity'],
+                    record['Emotion_Words'],
+                    record['Affect_Happy'],
+                    record['Affect_Worry'],
+                    record['Affect_Sad'],
+                    record['Affect_Angry'],
+                    record['Audio_Quality'],
+                ])
         except InputError as err:
             logging.warning(err.message)
             continue
