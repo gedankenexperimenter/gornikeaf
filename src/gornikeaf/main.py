@@ -190,7 +190,7 @@ def collect_segment_data(eaf, speaker, segment):
     data['End_Time'] = end
     data['Time_Period'] = get_activity_code(eaf, start)
     data['Emotion_Words'] = get_efw_count(eaf, speaker, start)
-    data['Audio_Quality'] = get_audio_quality(eaf, start)
+    data['Audio_Quality'] = get_audio_quality(eaf, start, end)
     for key, value in get_affect_codes(eaf, speaker, start).items():
         data[key] = value
     data['Responsivity'] = ''
@@ -271,7 +271,7 @@ def get_affect_codes(eaf, speaker, start):
     return codes
 
 # ------------------------------------------------------------------------------
-def get_audio_quality(eaf, start):
+def get_audio_quality(eaf, start, end):
     """Get audio recording quality at given time
     """
     seg = eaf.get_annotation_data_at_time(QUALITY_TIER_NAME, start + 1)
@@ -280,12 +280,26 @@ def get_audio_quality(eaf, start):
     desc = seg[0][2]
     if re.search(r'noisy', desc, re.IGNORECASE):
         return 2
-    if re.search(r'^y', desc, re.IGNORECASE):
-        return 1
     if re.search(r'^n', desc, re.IGNORECASE):
         return 3
     if re.search(r'^o', desc, re.IGNORECASE):
         return 4
+    if re.search(r'^y', desc, re.IGNORECASE):
+        for q_segment in eaf.get_annotation_data_for_tier(QUALITY_TIER_NAME):
+            (q_start, q_end) = q_segment[:2]
+            if q_end < start:
+                continue
+            if q_start > end:
+                break
+            # q_segment overlaps with the segment of interest
+            desc = q_segment[0][2]
+            if re.search(r'noisy', desc, re.IGNORECASE):
+                return 2
+            if re.search(r'^n', desc, re.IGNORECASE):
+                return 3
+            if re.search(r'^o', desc, re.IGNORECASE):
+                return 4
+        return 1
     return '?'
 
 # ==============================================================================
