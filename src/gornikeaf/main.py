@@ -292,7 +292,7 @@ def get_audio_quality(eaf, start, end):
             if q_start > end:
                 break
             # q_segment overlaps with the segment of interest
-            desc = q_segment[0][2]
+            desc = q_segment[2]
             if re.search(r'noisy', desc, re.IGNORECASE):
                 return 2
             if re.search(r'^n', desc, re.IGNORECASE):
