@@ -189,7 +189,12 @@ def collect_segment_data(eaf, speaker, segment):
     data['Start_Time'] = start
     data['End_Time'] = end
     data['Time_Period'] = get_activity_code(eaf, start)
-    data['Emotion_Words'] = get_efw_count(eaf, speaker, start)
+    data['Child_Emotion_Words'] = ''
+    if speaker == CHILD_TIER_NAME:
+        data['Child_Emotion_Words'] = get_efw_count(eaf, speaker, start)
+    data['Mother_Emotion_Words'] = ''
+    if speaker == MOTHER_TIER_NAME:
+        data['Mother_Emotion_Words'] = get_efw_count(eaf, speaker, start)
     data['Audio_Quality'] = get_audio_quality(eaf, start, end)
     for key, value in get_affect_codes(eaf, speaker, start).items():
         data[key] = value
@@ -334,7 +339,8 @@ def main(args):
         'End_Time',
         'Time_Period',
         'Responsivity',
-        'Emotion_Words',
+        'Child_Emotion_Words',
+        'Mother_Emotion_Words',
         'Affect_Happy',
         'Affect_Worry',
         'Affect_Sad',
@@ -353,7 +359,8 @@ def main(args):
                     record['End_Time'],
                     record['Time_Period'],
                     record['Responsivity'],
-                    record['Emotion_Words'],
+                    record['Child_Emotion_Words'],
+                    record['Mother_Emotion_Words'],
                     record['Affect_Happy'],
                     record['Affect_Worry'],
                     record['Affect_Sad'],
