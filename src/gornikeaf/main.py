@@ -244,6 +244,8 @@ def get_efw_count(eaf, speaker, start):
         return '?'
     desc = seg[0][2]
     logging.debug("desc = %s", desc)
+    if speaker == CHILD_TIER_NAME:
+        return desc
     m = re.match(r'.*(\d+)', desc)
     if m is not None:
         return m.group(1)
